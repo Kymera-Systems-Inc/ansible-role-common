@@ -1,0 +1,88 @@
+---
+- name: Temp set dns server
+  ansible.builtin.template:
+    src: etc/resolv.conf.j2
+    dest: /etc/resolv.conf
+  when: common_dns_nameservers
+  notify:
+    - restart systemd-resolved
+
+- name: configure apt proxy
+  ansible.builtin.template:
+    dest: "/etc/apt/apt.conf.d/00proxy"
+    src: 00proxy.j2
+  when: apt_proxy
+
+- name: disable automatic upgrades
+  ansible.builtin.copy:
+    src: 20auto-upgrades
+    dest: /etc/apt/apt.conf.d
+
+- name: disable upgrade notification
+  ansible.builtin.file:
+    path: /etc/apt/apt.conf.d/99update-notifier
+    state: absent
+
+- name: Install root certificate
+  ansible.builtin.copy:
+    src: "{{root_cert}}"
+    dest: "/usr/local/share/ca-certificates/{{root_cert}}"
+  notify:
+    - update certs
+  when: root_cert is defined
+
+- name: flush handlers
+  meta: flush_handlers
+
+- name: Update and upgrade apt
+  apt:
+    update_cache: yes
+    upgrade: yes
+
+- name: Install apt dependencies
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg-agent
+      - software-properties-common
+      - python3-pip
+      - git
+    state: present
+
+- name: Install extra apt dependencies
+  apt:
+    name: "{{common_extra_packages}}"
+    state: present
+    update_cache: yes
+  when: common_extra_packages
+
+- name: Set hostname
+  hostname:
+    name: "{{hostname}}"
+    use: systemd
+
+- name: Update /etc/hosts
+  replace:
+    path: /etc/hosts
+    regexp: "127.0.[0,1].1.((?!localhost).)*$"
+    replace: "127.0.0.1 {{hostname}}"
+
+- name: set time server
+  ansible.builtin.replace:
+    path: /etc/systemd/timesyncd.conf
+    regexp: '(?=^)[#]?NTP=.+'
+    replace: 'NTP={{time_server_host}}'
+  when: time_server_host is defined
+  notify:
+    - restart time client
+
+- name: flush handlers
+  meta: flush_handlers
+
+- name: Create /srv/resources directory
+  ansible.builtin.file:
+    path: '/srv/resources'
+    state: directory
+    mode: '0755'

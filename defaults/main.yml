@@ -1,0 +1,3 @@
+common_dns_nameservers: []
+common_dns_domain: ''
+common_extra_packages: []
